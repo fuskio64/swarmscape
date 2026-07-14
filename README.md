@@ -37,8 +37,14 @@ cd swarmscape
 | **🎲 shuffle** | re-randomize the attraction matrix, keep positions |
 | **↺ reset** | re-randomize rules *and* scatter particles fresh |
 | **🔗 link** | copy a permalink that reproduces this exact universe, including any cells you've hand-edited |
+| **📸 save frame as PNG** | download the current canvas as an image |
 | click / drag canvas | stir the swarm with your cursor |
 | `space` | pause / resume |
+| `R` | reset (fresh seed + scattered particles) |
+| `N` | shuffle rules only (fresh seed, keep positions) |
+
+Your last universe is also remembered automatically (via `localStorage`), so
+reopening the page without a link picks up where you left off.
 
 ## How it works
 

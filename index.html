@@ -30,6 +30,7 @@
     inset: 0;
     width: 100%;
     height: 100%;
+    touch-action: none;
   }
   .panel {
     position: fixed;
@@ -126,6 +127,7 @@
     border-radius: 8px;
     cursor: ns-resize;
     box-shadow: 0 0 0 1px var(--panel-border);
+    touch-action: none;
   }
   .btns {
     display: flex;
@@ -174,12 +176,29 @@
     transform: translateY(-8px);
     pointer-events: none;
   }
+  .paused-badge {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(10px);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    display: none;
+  }
+  .paused-badge.visible { display: block; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 
 <button class="toggle" id="toggleUI" title="Hide panel">‒</button>
+<div class="paused-badge" id="pausedBadge">⏸ paused</div>
 
 <div class="panel" id="panel">
   <h1>Swarmscape</h1>
@@ -221,7 +240,7 @@
     </label>
   </div>
 
-  <p class="section-label">rulebook — drag a cell up/down to bend it</p>
+  <p class="section-label" id="matrixLabel">rulebook — drag a cell up/down to bend it</p>
   <div class="matrix-wrap">
     <canvas id="matrix" width="176" height="176"></canvas>
   </div>
@@ -231,9 +250,12 @@
     <button id="reset">↺ reset</button>
     <button id="link">🔗 link</button>
   </div>
+  <div class="btns" style="margin-top: 6px;">
+    <button id="save">📸 save frame as PNG</button>
+  </div>
 </div>
 
-<div class="hint">click / drag canvas to stir · space to pause · drag rulebook cells to edit forces</div>
+<div class="hint">drag canvas to stir · space pause · R reset · N shuffle · drag rulebook cells to edit forces</div>
 
 <script>
 (() => {
@@ -484,10 +506,14 @@
     return { a, b };
   }
 
+  const matrixLabel = document.getElementById('matrixLabel');
+  const MATRIX_LABEL_DEFAULT = matrixLabel.textContent;
+
   matrixCanvas.addEventListener('pointerdown', e => {
     dragCell = matrixCellAt(e.clientX, e.clientY);
     dragLastY = e.clientY;
     matrixCanvas.setPointerCapture(e.pointerId);
+    showCellValue(dragCell.a, dragCell.b);
   });
   matrixCanvas.addEventListener('pointermove', e => {
     if (!dragCell) return;
@@ -496,10 +522,17 @@
     const { a, b } = dragCell;
     state.rules[a][b] = clamp(state.rules[a][b] + dy * 0.012, -1, 1);
     drawMatrix();
+    showCellValue(a, b);
   });
   window.addEventListener('pointerup', () => {
-    if (dragCell) { dragCell = null; updateURL(); }
+    if (dragCell) { dragCell = null; updateURL(); matrixLabel.textContent = MATRIX_LABEL_DEFAULT; }
   });
+
+  function showCellValue(a, b) {
+    const v = state.rules[a][b].toFixed(2);
+    const kind = state.rules[a][b] >= 0 ? 'attracts' : 'repels';
+    matrixLabel.textContent = `species ${a} → ${b}: ${v} (${kind})`;
+  }
 
   // --- shareable permalink: seed + params + (possibly hand-edited) rules ---
   function encodeState() {
@@ -516,13 +549,17 @@
     return params.toString();
   }
 
+  const STORAGE_KEY = 'swarmscape:v1';
+
   function updateURL() {
-    history.replaceState(null, '', '#' + encodeState());
+    const s = encodeState();
+    history.replaceState(null, '', '#' + s);
+    try { localStorage.setItem(STORAGE_KEY, s); } catch (e) { /* private mode, etc. */ }
   }
 
-  function applyURLState() {
-    if (!location.hash.length) return false;
-    const params = new URLSearchParams(location.hash.slice(1));
+  function loadFromParamsString(str) {
+    if (!str) return false;
+    const params = new URLSearchParams(str);
     if (!params.has('seed')) return false;
     state.seed = parseInt(params.get('seed'), 10) >>> 0;
     state.speciesCount = clamp(parseInt(params.get('species'), 10) || 4, 2, 6);
@@ -545,6 +582,16 @@
           state.rules[a][b] = clamp(flat[k++], -1, 1);
     }
     return true;
+  }
+
+  function applyURLState() {
+    return loadFromParamsString(location.hash.slice(1));
+  }
+
+  function applyStoredState() {
+    let saved = null;
+    try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode, etc. */ }
+    return loadFromParamsString(saved);
   }
 
   // UI wiring
@@ -602,6 +649,12 @@
 
   el('shuffle').addEventListener('click', () => { newRules(true); });
   el('reset').addEventListener('click', () => { reset(true); });
+  el('save').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.download = `swarmscape-${state.seed}.png`;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  });
   el('link').addEventListener('click', async e => {
     updateURL();
     const url = location.href;
@@ -616,8 +669,20 @@
     }
   });
 
+  const pausedBadge = document.getElementById('pausedBadge');
   window.addEventListener('keydown', e => {
-    if (e.code === 'Space') { state.paused = !state.paused; e.preventDefault(); }
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'SELECT') return; // don't hijack slider/select focus
+
+    if (e.code === 'Space') {
+      state.paused = !state.paused;
+      pausedBadge.classList.toggle('visible', state.paused);
+      e.preventDefault();
+    } else if (e.key === 'r' || e.key === 'R') {
+      reset(true);
+    } else if (e.key === 'n' || e.key === 'N') {
+      newRules(true);
+    }
   });
 
   function pointerPos(e) {
@@ -633,7 +698,7 @@
     panel.classList.toggle('hidden');
   });
 
-  if (applyURLState()) {
+  if (applyURLState() || applyStoredState()) {
     syncControls();
     seedParticles();
     drawMatrix();
