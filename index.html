@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swarmscape — emergent particle life</title>
+<style>
+  :root {
+    --bg: #05060a;
+    --panel-bg: rgba(12, 14, 22, 0.72);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --text: #e8eaf2;
+    --text-dim: #8b8fa3;
+    --accent: #7dd3fc;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .panel {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(10px);
+    border-radius: 14px;
+    padding: 16px 18px;
+    width: 260px;
+    font-size: 13px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .panel h1 {
+    font-size: 15px;
+    margin: 0 0 4px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .panel .sub {
+    color: var(--text-dim);
+    margin: 0 0 14px;
+    line-height: 1.4;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .row label {
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .row output {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    min-width: 34px;
+    text-align: right;
+  }
+  input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+  .btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  button {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 12.5px;
+    transition: background 0.15s ease;
+  }
+  button:hover { background: rgba(255,255,255,0.13); }
+  button:active { transform: translateY(1px); }
+  .hint {
+    position: fixed;
+    bottom: 14px;
+    left: 16px;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    opacity: 0.7;
+    user-select: none;
+  }
+  .toggle {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    color: var(--text-dim);
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    backdrop-filter: blur(10px);
+  }
+  .panel.hidden {
+    opacity: 0;
+    transform: translateY(-8px);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<button class="toggle" id="toggleUI" title="Hide panel">‒</button>
+
+<div class="panel" id="panel">
+  <h1>Swarmscape</h1>
+  <p class="sub">Colored particles pulled and pushed by an invisible rulebook. No two runs are alike.</p>
+
+  <div class="row">
+    <label for="species">species</label>
+    <input type="range" id="species" min="2" max="6" value="4" step="1">
+    <output id="speciesVal">4</output>
+  </div>
+  <div class="row">
+    <label for="count">particles</label>
+    <input type="range" id="count" min="200" max="2400" value="1000" step="100">
+    <output id="countVal">1000</output>
+  </div>
+  <div class="row">
+    <label for="speed">speed</label>
+    <input type="range" id="speed" min="0.2" max="2.5" value="1" step="0.1">
+    <output id="speedVal">1.0</output>
+  </div>
+  <div class="row">
+    <label for="trail">trails</label>
+    <input type="range" id="trail" min="0.02" max="0.35" value="0.10" step="0.01">
+    <output id="trailVal">0.10</output>
+  </div>
+
+  <div class="btns">
+    <button id="shuffle">🎲 New rules</button>
+    <button id="reset">↺ Reset</button>
+  </div>
+</div>
+
+<div class="hint">click / drag to stir · space to pause</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const palette = [
+    '#ff5d8f', '#7dd3fc', '#ffd166', '#8be38f', '#c084fc', '#ff9770'
+  ];
+
+  const state = {
+    speciesCount: 4,
+    particleCount: 1000,
+    speed: 1,
+    trail: 0.10,
+    paused: false,
+    rules: [],      // rules[a][b] = force coefficient species a feels toward species b
+    radii: [],       // radii[a][b] = interaction radius
+    particles: []
+  };
+
+  function randRange(a, b) { return a + Math.random() * (b - a); }
+
+  function makeRules(n) {
+    const rules = [];
+    const radii = [];
+    for (let a = 0; a < n; a++) {
+      rules.push([]);
+      radii.push([]);
+      for (let b = 0; b < n; b++) {
+        rules[a].push(randRange(-1, 1));
+        radii[a].push(randRange(40, 160));
+      }
+    }
+    return { rules, radii };
+  }
+
+  function seedParticles() {
+    state.particles = [];
+    for (let i = 0; i < state.particleCount; i++) {
+      state.particles.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: 0,
+        vy: 0,
+        s: Math.floor(Math.random() * state.speciesCount)
+      });
+    }
+  }
+
+  function newRules() {
+    const { rules, radii } = makeRules(state.speciesCount);
+    state.rules = rules;
+    state.radii = radii;
+  }
+
+  function reset() {
+    newRules();
+    seedParticles();
+  }
+
+  // spatial grid for cheap neighbor queries
+  let grid, cellSize, cols, rows;
+
+  function buildGrid() {
+    cellSize = 90;
+    cols = Math.max(1, Math.ceil(W / cellSize));
+    rows = Math.max(1, Math.ceil(H / cellSize));
+    grid = new Array(cols * rows);
+    for (let i = 0; i < grid.length; i++) grid[i] = [];
+  }
+
+  function cellIndex(x, y) {
+    let cx = Math.floor(x / cellSize);
+    let cy = Math.floor(y / cellSize);
+    cx = Math.max(0, Math.min(cols - 1, cx));
+    cy = Math.max(0, Math.min(rows - 1, cy));
+    return cy * cols + cx;
+  }
+
+  const pointer = { x: -9999, y: -9999, active: false };
+
+  function step() {
+    buildGrid();
+    for (const p of state.particles) grid[cellIndex(p.x, p.y)].push(p);
+
+    const maxR = 170;
+    const reachCells = Math.ceil(maxR / cellSize);
+
+    for (const p of state.particles) {
+      let fx = 0, fy = 0;
+      const cx = Math.floor(p.x / cellSize);
+      const cy = Math.floor(p.y / cellSize);
+
+      for (let gy = cy - reachCells; gy <= cy + reachCells; gy++) {
+        if (gy < 0 || gy >= rows) continue;
+        for (let gx = cx - reachCells; gx <= cx + reachCells; gx++) {
+          if (gx < 0 || gx >= cols) continue;
+          const bucket = grid[gy * cols + gx];
+          for (const q of bucket) {
+            if (q === p) continue;
+            let dx = q.x - p.x;
+            let dy = q.y - p.y;
+            const d2 = dx * dx + dy * dy;
+            const r = state.radii[p.s][q.s];
+            if (d2 > r * r || d2 < 1) continue;
+            const d = Math.sqrt(d2);
+            const g = state.rules[p.s][q.s];
+            const force = g / d;
+            fx += (dx / d) * force;
+            fy += (dy / d) * force;
+          }
+        }
+      }
+
+      if (pointer.active) {
+        const dx = pointer.x - p.x, dy = pointer.y - p.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 220 * 220 && d2 > 4) {
+          const d = Math.sqrt(d2);
+          fx += (dx / d) * 0.6;
+          fy += (dy / d) * 0.6;
+        }
+      }
+
+      p.vx = (p.vx + fx * 0.06) * 0.86;
+      p.vy = (p.vy + fy * 0.06) * 0.86;
+      p.x += p.vx * state.speed;
+      p.y += p.vy * state.speed;
+
+      if (p.x < 0) p.x += W; else if (p.x > W) p.x -= W;
+      if (p.y < 0) p.y += H; else if (p.y > H) p.y -= H;
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = `rgba(5, 6, 10, ${state.trail})`;
+    ctx.fillRect(0, 0, W, H);
+
+    for (const p of state.particles) {
+      ctx.fillStyle = palette[p.s % palette.length];
+      ctx.fillRect(p.x - 1.2, p.y - 1.2, 2.4, 2.4);
+    }
+  }
+
+  function loop() {
+    if (!state.paused) {
+      step();
+      draw();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // UI wiring
+  const el = id => document.getElementById(id);
+  const speciesInput = el('species'), countInput = el('count'),
+        speedInput = el('speed'), trailInput = el('trail');
+
+  function syncOutputs() {
+    el('speciesVal').textContent = state.speciesCount;
+    el('countVal').textContent = state.particleCount;
+    el('speedVal').textContent = state.speed.toFixed(1);
+    el('trailVal').textContent = state.trail.toFixed(2);
+  }
+
+  speciesInput.addEventListener('input', e => {
+    state.speciesCount = parseInt(e.target.value, 10);
+    syncOutputs();
+    reset();
+  });
+  countInput.addEventListener('input', e => {
+    state.particleCount = parseInt(e.target.value, 10);
+    syncOutputs();
+    seedParticles();
+  });
+  speedInput.addEventListener('input', e => {
+    state.speed = parseFloat(e.target.value);
+    syncOutputs();
+  });
+  trailInput.addEventListener('input', e => {
+    state.trail = parseFloat(e.target.value);
+    syncOutputs();
+  });
+
+  el('shuffle').addEventListener('click', () => { newRules(); });
+  el('reset').addEventListener('click', () => { reset(); });
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { state.paused = !state.paused; e.preventDefault(); }
+  });
+
+  function pointerPos(e) {
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX, y: t.clientY };
+  }
+  canvas.addEventListener('pointerdown', e => { pointer.active = true; const p = pointerPos(e); pointer.x = p.x; pointer.y = p.y; });
+  canvas.addEventListener('pointermove', e => { if (pointer.active) { const p = pointerPos(e); pointer.x = p.x; pointer.y = p.y; } });
+  window.addEventListener('pointerup', () => { pointer.active = false; });
+
+  const panel = el('panel');
+  el('toggleUI').addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+  });
+
+  syncOutputs();
+  reset();
+  loop();
+})();
+</script>
+</body>
+</html>
