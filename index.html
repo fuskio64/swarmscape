@@ -383,6 +383,9 @@
 
   const pointer = { x: -9999, y: -9999, active: false };
 
+  const CORE_RADIUS = 14;   // every particle keeps this much personal space, regardless of species
+  const CORE_STRENGTH = 1.2;
+
   function step() {
     buildGrid();
     for (const p of state.particles) grid[cellIndex(p.x, p.y)].push(p);
@@ -406,8 +409,17 @@
             let dy = q.y - p.y;
             const d2 = dx * dx + dy * dy;
             const r = state.radii[p.s][q.s];
-            if (d2 > r * r || d2 < 1) continue;
+            if (d2 > r * r || d2 < 0.0001) continue;
             const d = Math.sqrt(d2);
+
+            // universal short-range repulsion: keeps species from collapsing into a single
+            // overlapping point, so clusters read as crisp membranes instead of a blob.
+            if (d < CORE_RADIUS) {
+              const core = (1 - d / CORE_RADIUS) * CORE_STRENGTH;
+              fx -= (dx / d) * core;
+              fy -= (dy / d) * core;
+            }
+
             const g = state.rules[p.s][q.s];
             const force = g / d;
             fx += (dx / d) * force;

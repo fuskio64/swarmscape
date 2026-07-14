@@ -52,8 +52,12 @@ Each particle belongs to a species (a color). For every pair of species
 `(a, b)` there's a coefficient in `[-1, 1]` and a random interaction radius.
 On every frame, each particle sums up a force from every nearby particle:
 attract if the coefficient for that pair is positive, repel if negative,
-nothing beyond the radius. A neighbor grid keeps this cheap enough to run
-thousands of particles at 60fps in a browser tab.
+nothing beyond the radius. On top of that, every particle also keeps a
+small universal personal-space bubble (~14px) that repels *any* other
+particle regardless of species — without it, strongly-attracting species
+just collapse into an overlapping smear; with it, clusters settle into
+crisp membranes and cells. A neighbor grid keeps all of this cheap enough
+to run thousands of particles at 60fps in a browser tab.
 
 The whole rulebook — the NxN matrix of coefficients — is drawn as a small
 colored grid in the panel, and it's live: dragging a cell edits that force
