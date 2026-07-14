@@ -31,23 +31,30 @@ cd swarmscape
 | **particles** | how many dots are simulated |
 | **speed** | simulation speed multiplier |
 | **trails** | how quickly old frames fade (low = long ghostly trails) |
-| **🎲 New rules** | re-randomize the attraction matrix, keep positions |
-| **↺ Reset** | re-randomize rules *and* scatter particles fresh |
-| click / drag | stir the swarm with your cursor |
+| **style** | how the rulebook is generated — `balanced` (self-repelling species, good default), `orderly` (asymmetric pairs, tends to chase/orbit), `chaotic` (fully random, original behavior) |
+| **wrap edges** | off makes particles bounce off the screen edges instead of wrapping around |
+| **rulebook grid** | live view of the attraction matrix — red = repel, blue = attract. **Drag a cell up/down** to bend that relationship in real time |
+| **🎲 shuffle** | re-randomize the attraction matrix, keep positions |
+| **↺ reset** | re-randomize rules *and* scatter particles fresh |
+| **🔗 link** | copy a permalink that reproduces this exact universe, including any cells you've hand-edited |
+| click / drag canvas | stir the swarm with your cursor |
 | `space` | pause / resume |
 
 ## How it works
 
 Each particle belongs to a species (a color). For every pair of species
-`(a, b)` there's a random coefficient in `[-1, 1]` and a random interaction
-radius. On every frame, each particle sums up a force from every nearby
-particle: attract if the coefficient for that pair is positive, repel if
-negative, nothing beyond the radius. A neighbor grid keeps this cheap enough
-to run thousands of particles at 60fps in a browser tab.
+`(a, b)` there's a coefficient in `[-1, 1]` and a random interaction radius.
+On every frame, each particle sums up a force from every nearby particle:
+attract if the coefficient for that pair is positive, repel if negative,
+nothing beyond the radius. A neighbor grid keeps this cheap enough to run
+thousands of particles at 60fps in a browser tab.
 
-That's the entire model. No global rules, no fitness function, no seed
-values you have to hand-tune — just a random matrix and physics doing the
-rest.
+The whole rulebook — the NxN matrix of coefficients — is drawn as a small
+colored grid in the panel, and it's live: dragging a cell edits that force
+in real time, so you can nudge an emergent pattern instead of only
+re-rolling the dice. Everything (the random seed, the sliders, and any
+hand-edits to the matrix) round-trips through the **🔗 link** button, so a
+specific universe can be bookmarked or sent to someone else.
 
 ## License
 
